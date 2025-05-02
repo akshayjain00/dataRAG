@@ -1,0 +1,179 @@
+"""Module for parsing database schema definitions from YAML or JSON into an internal model."""
+
+import yaml
+import json
+from dataclasses import dataclass, field
+from typing import Optional, Dict, Any
+
+@dataclass
+class ForeignKey:
+    column: str
+    ref_table: str
+    ref_column: str
+
+@dataclass
+class Column:
+    name: str
+    data_type: str
+    is_primary: bool = False
+    is_unique: bool = False
+    foreign_key: Optional[ForeignKey] = None
+
+@dataclass
+class Table:
+    name: str
+    columns: Dict[str, Column] = field(default_factory=dict)
+    primary_key: Optional[str] = None
+    foreign_keys: Dict[str, ForeignKey] = field(default_factory=dict)
+
+@dataclass
+class Schema:
+    tables: Dict[str, Table] = field(default_factory=dict)
+
+class SchemaParser:
+    def parse(self, content: str) -> Schema:
+        # Determine format
+        try:
+            data = json.loads(content)
+        except json.JSONDecodeError:
+            # Fallback to YAML loading
+            try:
+                data = yaml.safe_load(content)
+                # Handle case where YAML is just a string or other non-dict type
+                if not isinstance(data, dict):
+                    # If content cannot be parsed into a dict, return empty schema
+                    # Or handle specific cases if needed
+                    return Schema()
+            except yaml.YAMLError:
+                # If YAML parsing fails, return empty schema
+                return Schema()
+        except Exception:
+            # Catch any other unexpected errors during loading
+            return Schema()
+
+        tables = {}
+
+        # Try parsing the original format (top-level 'tables' list)
+        if "tables" in data and isinstance(data["tables"], list):
+            for table_def in data.get("tables", []):
+                if not isinstance(table_def, dict): continue # Skip invalid entries
+                name = table_def.get("name")
+                if not name: continue # Skip tables without names
+
+                raw_cols = table_def.get("columns", {})
+                columns_map = {}
+                col_items = []
+                # Support both dict and list column definitions
+                if isinstance(raw_cols, dict):
+                    col_items = raw_cols.items()
+                elif isinstance(raw_cols, list):
+                    col_items = [(col.get("name"), col) for col in raw_cols if isinstance(col, dict) and "name" in col]
+
+                # Parse columns
+                for col_name, col_def in col_items:
+                    if not col_name or not isinstance(col_def, dict): continue # Skip invalid column defs
+                    data_type = col_def.get("type") or col_def.get("data_type") # Accept 'type' or 'data_type'
+                    if not data_type: continue # Skip columns without type
+
+                    is_pk = col_def.get("primary_key", False) or (table_def.get("primary_key") == col_name)
+                    is_unique = col_def.get("unique", False)
+                    columns_map[col_name] = Column(
+                        name=col_name,
+                        data_type=data_type,
+                        is_primary=is_pk,
+                        is_unique=is_unique
+                    )
+
+                # Parse foreign keys (simplified, adapt if needed)
+                fk_defs = table_def.get("foreign_keys", [])
+                foreign_keys_map = {}
+                if isinstance(fk_defs, list):
+                    for fk in fk_defs:
+                         if not isinstance(fk, dict): continue
+                         col = fk.get("column")
+                         ref = fk.get("references", {})
+                         if not isinstance(ref, dict): continue
+                         ref_table = ref.get("table")
+                         ref_column = ref.get("column")
+                         if col and ref_table and ref_column:
+                             fk_obj = ForeignKey(column=col, ref_table=ref_table, ref_column=ref_column)
+                             if col in columns_map:
+                                 columns_map[col].foreign_key = fk_obj
+                             foreign_keys_map[col] = fk_obj
+
+                tables[name] = Table(
+                    name=name,
+                    columns=columns_map,
+                    primary_key=table_def.get("primary_key"),
+                    foreign_keys=foreign_keys_map
+                )
+
+        # Try parsing dbt format (top-level 'models' or 'sources' list)
+        elif "models" in data and isinstance(data["models"], list):
+            for model_def in data.get("models", []):
+                if not isinstance(model_def, dict): continue # Skip invalid entries
+                name = model_def.get("name")
+                if not name: continue # Skip models without names
+
+                columns_map = {}
+                raw_cols = model_def.get("columns", [])
+                if isinstance(raw_cols, list):
+                    for col_def in raw_cols:
+                        if not isinstance(col_def, dict): continue # Skip invalid column defs
+                        col_name = col_def.get("name")
+                        data_type = col_def.get("data_type") # dbt uses 'data_type'
+                        if not col_name or not data_type: continue # Skip columns without name or type
+
+                        # Basic column parsing from dbt format
+                        # Add more sophisticated parsing (tests, constraints) if needed
+                        columns_map[col_name] = Column(
+                            name=col_name,
+                            data_type=data_type,
+                            # dbt schema files don't typically define PK/FK directly here
+                            # This info might be in constraints or separate model properties
+                            is_primary=False,
+                            is_unique=False
+                        )
+
+                # Create table if columns were found
+                if columns_map:
+                     tables[name] = Table(
+                         name=name,
+                         columns=columns_map
+                         # PK/FK info usually not in this part of dbt schema.yml
+                     )
+        # Add similar logic for 'sources' if needed
+
+        # Fallback: parse RAG docs examples to extract table names if no tables loaded
+        if not tables and isinstance(data, dict) and "examples" in data and isinstance(data["examples"], list):
+            for example in data["examples"]:
+                if not isinstance(example, dict):
+                    continue
+                for tbl in example.get("tables", []):
+                    if tbl and tbl not in tables:
+                        # Create stub Table with no column details
+                        tables[tbl] = Table(name=tbl)
+
+        return Schema(tables)
+
+    @staticmethod
+    def from_yaml(path: str) -> Schema:
+        try:
+            with open(path, "r") as f:
+                content = f.read()
+            parser = SchemaParser()
+            return parser.parse(content)
+        except Exception:
+            # Handle file reading or parsing errors
+            return Schema()
+
+    @staticmethod
+    def from_json(path: str) -> Schema:
+        try:
+            with open(path, "r") as f:
+                content = f.read()
+            parser = SchemaParser()
+            return parser.parse(content)
+        except Exception:
+            # Handle file reading or parsing errors
+            return Schema()

@@ -1,0 +1,21 @@
+tables:
+  users:
+    columns:
+      id:
+        type: integer
+        primary_key: true
+      name:
+        type: text
+    foreign_keys: []
+  posts:
+    columns:
+      id:
+        type: integer
+        primary_key: true
+      user_id:
+        type: integer
+    foreign_keys:
+      - column: user_id
+        references:
+          table: users
+          column: id 

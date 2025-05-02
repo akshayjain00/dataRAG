@@ -1,0 +1,92 @@
+version: 2
+
+models:
+  - name: fact_tracking_sessions
+    description: |-
+      This model stores tracking session details associated with orders.
+      - This model is a fact table from the database `prod_eldoria`, under the `core` schema.
+      - Captures session start and end times, location information, and app metadata.
+      - Includes information on customer platforms, session location arrays, and more.
+      - Table is "prod_eldoria.core.fact_tracking_sessions"
+
+    config:
+      primary_key: 
+        - order_id
+        - server_ts
+        - screen_open_time
+        - screen_close_time
+      foreign_key_relationships:
+        - source_column: order_id
+          target_model: fact_orders
+          target_column: crn_number
+
+    columns:
+      - name: order_id
+        description: Unique identifier for the order
+        data_type: varchar
+        tests:
+          - not_null
+
+      - name: server_ts
+        description: Timestamp in epoch format for server event time
+        data_type: number
+
+      - name: server_timestamp_ist
+        description: Server timestamp in IST timezone
+        data_type: timestamp_tz
+
+      - name: screen_open_time
+        description: Epoch time when tracking screen was opened
+        data_type: number
+
+      - name: screen_close_time
+        description: Epoch time when tracking screen was closed
+        data_type: number
+
+      - name: location_count
+        description: Total number of locations during session
+        data_type: number
+
+      - name: unique_location_count
+        description: Count of unique location in session
+        data_type: number
+
+      - name: session_locations
+        description: Raw locations received during the session
+        data_type: variant
+
+      - name: session_unique_locations
+        description: Unique location points after de-duplication
+        data_type: variant
+
+      - name: channel_ids
+        description: Array of channel identifiers used during session
+        data_type: array
+
+      - name: driver_app_versions
+        description: List of driver app versions seen during session
+        data_type: array
+
+      - name: customer_app_version
+        description: Version of the customer app at the time of session
+        data_type: number
+
+      - name: order_id_at_start
+        description: Order ID at the start of the session (may differ from final order ID)
+        data_type: varchar
+
+      - name: customer_platform
+        description: Platform used by the customer (e.g., Android, iOS)
+        data_type: varchar
+
+      - name: recenter_click_count
+        description: Number of times the user re-centered the map
+        data_type: number
+
+      - name: map_moved_count
+        description: Number of times the map was moved during the session
+        data_type: number
+
+      - name: location_source
+        description: Source of the location data (From where we get locations, e.g., Firestore, FirestoreV2, OMS)
+        data_type: varchar

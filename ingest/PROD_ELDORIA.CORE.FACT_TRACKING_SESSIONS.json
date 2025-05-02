@@ -1,0 +1,47 @@
+{
+    "examples": [
+      {
+        "question": "Find last 7 days bad orders percentage",
+        "sql": "SELECT COALESCE(COUNT(DISTINCT CASE WHEN (screen_close_time - screen_open_time) >= 10000 AND unique_location_count = 0 THEN order_id END) * 1.0 / NULLIF(COUNT(DISTINCT CASE WHEN (screen_close_time - screen_open_time) >= 10000 THEN order_id END), 0) * 100.0, 0) AS bad_order_perc FROM prod_eldoria.core.fact_tracking_sessions WHERE DATE(server_timestamp_ist) >= CURRENT_DATE - INTERVAL '7 days';",
+        "tables": ["fact_tracking_sessions"],
+        "difficulty": "basic",
+        "description": "Calculates the percentage of bad orders in the last 7 days where tracking duration was significant but had zero unique locations."
+      },
+      {
+        "question": "Find last 7 days bad sessions percentage",
+        "sql": "SELECT COALESCE(COUNT(CASE WHEN (screen_close_time - screen_open_time) >= 10000 AND unique_location_count = 0 THEN server_ts END) * 1.0 / NULLIF(COUNT(CASE WHEN (screen_close_time - screen_open_time) >= 10000 THEN server_ts END), 0) * 100.0, 0) AS bad_sessions_perc FROM prod_eldoria.core.fact_tracking_sessions WHERE DATE(server_timestamp_ist) >= CURRENT_DATE - INTERVAL '7 days';",
+        "tables": ["fact_tracking_sessions"],
+        "difficulty": "basic",
+        "description": "Calculates the percentage of bad sessions in the last 7 days where tracking duration was significant but had zero unique locations."
+      },
+      {
+        "question": "What is the P50 Location Refresh Rate for the last 3 days?",
+        "sql": "SELECT ROUND(PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY unique_location_refresh_rate DESC), 3) AS p_50_lrr FROM (SELECT order_id, server_ts, (unique_location_count / ((screen_close_time - screen_open_time) / 60000)) AS unique_location_refresh_rate, CASE WHEN unique_location_count = 0 THEN 1 ELSE 0 END AS zero_location_flag, ROUND(((screen_close_time - screen_open_time) / 60000), 2) AS session_time FROM prod_eldoria.core.fact_tracking_sessions WHERE DATE(server_timestamp_ist) >= CURRENT_DATE - INTERVAL '3 days' AND (screen_close_time - screen_open_time) <> 0);",
+        "tables": ["fact_tracking_sessions"],
+        "difficulty": "intermediate",
+        "description": "Calculates the median (P50) location refresh rate over the past 3 days, defined as the number of unique locations per minute of session duration."
+      },
+      {
+        "question": "What is the trend of bad session percentages for cancelled orders over the last 7 days?",
+        "sql": "SELECT DATE(server_timestamp_ist) AS date, COALESCE(COUNT(CASE WHEN (screen_close_time - screen_open_time) >= 10000 AND unique_location_count = 0 THEN server_ts END) * 1.0 / NULLIF(COUNT(CASE WHEN (screen_close_time - screen_open_time) >= 10000 THEN server_ts END), 0) * 100.0, 0) AS bad_sessions_perc FROM prod_eldoria.core.fact_tracking_sessions s INNER JOIN prod_eldoria.core.fact_orders o ON o.crn_number = s.order_id WHERE DATE(server_timestamp_ist) >= CURRENT_DATE - INTERVAL '7 days' AND o.status = 5 GROUP BY 1 ORDER BY 1 DESC;",
+        "tables": ["fact_tracking_sessions", "fact_orders"],
+        "difficulty": "intermediate",
+        "description": "Displays the daily percentage of bad sessions—sessions with significant duration but zero unique locations—for cancelled orders over the past week."
+      },
+      {
+            "question": "What is the percentage of bad orders for completed orders across different customer platforms?",
+            "sql": "SELECT customer_platform, COALESCE(COUNT(DISTINCT CASE WHEN (screen_close_time - screen_open_time) >= 10000 AND unique_location_count = 0 THEN s.order_id END) * 1.0 / NULLIF(COUNT(DISTINCT CASE WHEN (screen_close_time - screen_open_time) >= 10000 THEN s.order_id END), 0) * 100.0, 0) AS bad_orders_perc FROM prod_eldoria.core.fact_tracking_sessions s INNER JOIN prod_eldoria.core.fact_orders o ON o.crn_number = s.order_id WHERE DATE(SERVER_TIMESTAMP_IST) >= CURRENT_DATE - INTERVAL '1 week' AND o.status = 4 GROUP BY 1 ORDER BY 1 DESC;",
+            "tables": ["fact_tracking_sessions", "fact_orders"],
+            "difficulty": "intermediate",
+            "description": "Calculates the percentage of bad orders (no location data) for completed orders grouped by customer platform over the past week."
+          },
+          {
+            "question": "What is the average and percentile session time for all sessions in the last week?",
+            "sql": "SELECT ROUND(PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY session_time ASC), 3) AS p_50_session_time, ROUND(PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY session_time ASC), 3) AS p_75_session_time, ROUND(PERCENTILE_CONT(0.90) WITHIN GROUP (ORDER BY session_time ASC), 3) AS p_90_session_time, ROUND(PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY session_time ASC), 3) AS p_95_session_time, ROUND(PERCENTILE_CONT(0.80) WITHIN GROUP (ORDER BY session_time ASC), 3) AS p_80_session_time, ROUND(AVG(session_time), 3) AS avg_session_time FROM (SELECT ROUND(((screen_close_time - screen_open_time) / 60000), 2) AS session_time FROM prod_eldoria.core.fact_tracking_sessions s WHERE DATE(SERVER_TIMESTAMP_IST) >= CURRENT_DATE - INTERVAL '1 week' AND (screen_close_time - screen_open_time) <> 0);",
+            "tables": ["fact_tracking_sessions"],
+            "difficulty": "intermediate",
+            "description": "Calculates average and multiple percentiles (50th, 75th, 80th, 90th, 95th) for session duration in minutes for all sessions in the past week."
+          }
+    ]
+  }
+  
