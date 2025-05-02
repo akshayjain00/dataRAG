@@ -1,0 +1,3 @@
+[submodule "ingest/DE-DBT-SNOWFLAKE"]
+	path = ingest/DE-DBT-SNOWFLAKE
+	url = https://github.com/porterin/DE-DBT-SNOWFLAKE
