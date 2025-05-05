@@ -4,6 +4,7 @@ from core.schema_parser import Schema
 import re
 from collections import deque
 from difflib import SequenceMatcher
+from core.graph_rag_utils import extract_graph_rag_triples
 
 # --- Enhanced Keyword-based search with fuzzy matching ---
 def fuzzy_match(a, b):
@@ -25,8 +26,15 @@ def keyword_search(query: str, schema: Schema, top_k=5, fuzzy_threshold=0.7):
 # --- Enhanced Graph-based retrieval: multi-hop FK/PK traversal ---
 def graph_search(query: str, schema: Schema, top_k=5, max_hops=2):
     query_lower = query.lower()
-    # Find all tables matching the query
+    # Find all tables matching the query by name
     start_tables = [name for name in schema.tables if query_lower in name.lower()]
+    # If none matched, fallback to triple-based label matching
+    if not start_tables:
+        triples = extract_graph_rag_triples(schema)
+        for subj, pred, obj in triples:
+            if query_lower in subj.lower() or query_lower in obj.lower():
+                start_tables.append(subj)
+        start_tables = list(set(start_tables))
     visited = set(start_tables)
     queue = deque([(t, 0) for t in start_tables])
     related = []
@@ -95,10 +103,46 @@ def extract_features(vector_results, graph_results, keyword_results):
 # --- Simple re-ranker (weighted sum, document for future ML model) ---
 def rerank(candidates, w_vector=0.6, w_graph=0.2, w_keyword=0.2):
     """
-    Combine features into a final score. In future, replace with ML model.
+    Combine features into a final score. Features are normalized to [0,1] for fair combination.
+    Trace log includes normalized features and weighted contributions.
     """
-    for c in candidates:
-        c['final_score'] = w_vector * c.get('vector_score', 0) + w_graph * c.get('graph_score', 0) + w_keyword * c.get('keyword_score', 0)
+    if not candidates:
+        return []
+    # Gather raw feature lists
+    v = [c.get('vector_score', 0) for c in candidates]
+    g = [c.get('graph_score', 0) for c in candidates]
+    k = [c.get('keyword_score', 0) for c in candidates]
+    # Normalization helper
+    def norm(arr):
+        minv, maxv = min(arr), max(arr)
+        if maxv == minv:
+            return [0.0 for _ in arr]
+        return [(x - minv) / (maxv - minv) for x in arr]
+    v_norm = norm(v)
+    g_norm = norm(g)
+    k_norm = norm(k)
+    for idx, c in enumerate(candidates):
+        c['vector_score_norm'] = v_norm[idx]
+        c['graph_score_norm'] = g_norm[idx]
+        c['keyword_score_norm'] = k_norm[idx]
+        c['final_score'] = (
+            w_vector * v_norm[idx] +
+            w_graph * g_norm[idx] +
+            w_keyword * k_norm[idx]
+        )
+        # Expanded trace log
+        c['trace_log'] = {
+            'vector_score_raw': c.get('vector_score', 0),
+            'vector_score_norm': v_norm[idx],
+            'vector_weighted': w_vector * v_norm[idx],
+            'graph_score_raw': c.get('graph_score', 0),
+            'graph_score_norm': g_norm[idx],
+            'graph_weighted': w_graph * g_norm[idx],
+            'keyword_score_raw': c.get('keyword_score', 0),
+            'keyword_score_norm': k_norm[idx],
+            'keyword_weighted': w_keyword * k_norm[idx],
+            'final_score': c['final_score']
+        }
     return sorted(candidates, key=lambda x: x['final_score'], reverse=True)
 
 # --- Unified hybrid retrieval interface ---

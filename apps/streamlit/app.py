@@ -78,6 +78,15 @@ if schema and schema.tables:
         except Exception as e:
             st.sidebar.error(f"Neo4j ingestion failed: {e}")
 
+    # Add GraphRAG Triples Ingestion Button
+    if st.sidebar.button("Ingest GraphRAG triples to Neo4j"):
+        try:
+            with st.spinner("Ingesting GraphRAG triples into Neo4j..."):
+                GraphBuilder.ingest_graph_rag(schema)
+            st.sidebar.success("GraphRAG triples ingested into Neo4j successfully!")
+        except Exception as e:
+            st.sidebar.error(f"GraphRAG ingestion failed: {e}")
+
 # After schema is loaded/uploaded and parsed:
 if st.session_state['schema']:
     schema = st.session_state['schema']
@@ -101,11 +110,22 @@ if user_query and not disabled:
         # Call hybrid retriever
         ranked_results, diagnostics = hybrid_retrieve(user_query, schema)
 
-        # Generate SQL using LLM with retrieved context
-        sql = generator.generate_sql(user_query, ranked_results, schema)
+        # Auto-detect join vs. single-table SQL
+        # Extract unique tables from retrieval results
+        tables = [r['metadata'].get('table') for r in ranked_results if r.get('metadata', {}).get('table')]
+        target_tables = list(dict.fromkeys(tables))
+        if len(target_tables) > 1:
+            sql = generator.generate_cte_join_sql(target_tables, schema)
+            explanation = f"Auto-generated CTE join for tables: {', '.join(target_tables)}"
+        else:
+            # Single-table or no table: use the LLM-based generator
+            sql, explanation = generator.generate_sql(user_query, ranked_results, schema)
 
         st.subheader("Generated SQL")
         st.code(sql, language="sql")
+        # Natural-language explanation
+        st.subheader("Explanation")
+        st.write(explanation)
 
         # Display Diagnostics
         with st.expander("Show Retrieval Diagnostics"):

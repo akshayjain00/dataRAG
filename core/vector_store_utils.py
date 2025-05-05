@@ -4,6 +4,23 @@ from sentence_transformers import SentenceTransformer
 import chromadb
 from chromadb.config import Settings
 
+# Helper: Semantic search in Chroma
+def semantic_search(query, collection_name="schema_chunks", top_k=5):
+    client = chromadb.Client(Settings())
+    collection = client.get_or_create_collection(collection_name)
+    model = SentenceTransformer(EMBEDDING_MODEL_NAME)
+    query_emb = model.encode([query])[0]
+    results = collection.query(
+        query_embeddings=[query_emb.tolist()],
+        n_results=top_k,
+        include=["metadatas", "documents", "distances"]
+    )
+    hits = []
+    if results and results.get("documents") and results["documents"][0]:
+        for doc, meta, dist in zip(results["documents"][0], results["metadatas"][0], results["distances"][0]):
+            hits.append({"text": doc, "metadata": meta, "distance": dist})
+    return hits
+
 # Initialize embedding model (can be swapped for OpenAI if needed)
 EMBEDDING_MODEL_NAME = "all-MiniLM-L6-v2"
 
@@ -78,20 +95,3 @@ def store_embeddings_in_chroma(chunks: List[Dict[str, Any]], collection_name: st
             documents=[chunk['text']]
         )
     return collection
-
-# Helper: Semantic search in Chroma
-def semantic_search(query, collection_name="schema_chunks", top_k=5):
-    client = chromadb.Client(Settings())
-    collection = client.get_or_create_collection(collection_name)
-    model = SentenceTransformer(EMBEDDING_MODEL_NAME)
-    query_emb = model.encode([query])[0]
-    results = collection.query(
-        query_embeddings=[query_emb.tolist()],
-        n_results=top_k,
-        include=["metadatas", "documents", "distances"]
-    )
-    hits = []
-    if results and results.get("documents") and results["documents"][0]:
-        for doc, meta, dist in zip(results["documents"][0], results["metadatas"][0], results["distances"][0]):
-            hits.append({"text": doc, "metadata": meta, "distance": dist})
-    return hits

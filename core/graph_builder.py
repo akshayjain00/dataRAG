@@ -94,3 +94,28 @@ class GraphBuilder:
             raise
         # Note: Driver closure is handled by neo4j_utils, typically at app shutdown
         # or you could explicitly call close_driver() if running as a standalone script.
+
+    @staticmethod
+    def ingest_graph_rag(schema: Schema):
+        """
+        Ingests GraphRAG triples (subject, predicate, object) into Neo4j for advanced graph retrieval.
+        """
+        from core.graph_rag_utils import extract_graph_rag_triples
+        triples = extract_graph_rag_triples(schema)
+        for subj, pred, obj in triples:
+            if pred == "HAS_COLUMN":
+                # Column id is "table.column"
+                col_id = f"{subj}.{obj}"
+                cy = (
+                    "MATCH (t:Table {name: $subj}) "
+                    "MATCH (c:Column {id: $col_id}) "
+                    "MERGE (t)-[:HAS_COLUMN]->(c)"
+                )
+                run_query(cy, {'subj': subj, 'col_id': col_id})
+            elif pred == "FOREIGN_KEY":
+                cy = (
+                    "MATCH (t1:Table {name: $subj}) "
+                    "MATCH (t2:Table {name: $obj}) "
+                    "MERGE (t1)-[:FOREIGN_KEY]->(t2)"
+                )
+                run_query(cy, {'subj': subj, 'obj': obj})
